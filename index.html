@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#07111f"><title>Quotex Signal Lab</title>
+<style>
+:root{color-scheme:dark;--bg:#07111f;--card:#0d1d30;--line:#203b56;--muted:#9bb0c4;--green:#00e59b;--red:#ff5874}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#102641,#07111f 55%);font:15px system-ui,sans-serif;color:#eff7ff}
+main{max-width:850px;margin:auto;padding:22px 14px 60px}.brand{font-weight:900;font-size:24px}.brand span{color:var(--green)}.sub{color:var(--muted);margin:5px 0 20px}
+.card{background:#0d1d30;border:1px solid var(--line);border-radius:16px;padding:18px;margin:14px 0}
+.notice{border:1px solid #795b24;background:#2b210e;color:#ffe0a0;padding:12px;border-radius:10px;line-height:1.5}
+h2{font-size:17px;margin:0 0 12px}p{line-height:1.55}.muted{color:var(--muted)}input,button{font:inherit}input[type=file]{display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0}
+button{border:0;background:var(--green);color:#052319;font-weight:800;padding:12px 16px;border-radius:10px;width:100%}.signal{font-size:32px;font-weight:900}.wait{color:#ffd37d}.call{color:var(--green)}.put{color:var(--red)}.result{white-space:pre-wrap;overflow-wrap:anywhere}.chart{display:block;width:100%;height:240px;background:#071522;border:1px solid var(--line);border-radius:10px}
+small{color:var(--muted)}a{color:#8bc7ff}
+</style>
+</head>
+<body><main>
+<div class="brand">◈ QUOTEX <span>SIGNAL LAB</span></div>
+<div class="sub">Candlestick analysis · signals only · no automatic trading</div>
+<div class="notice"><b>Data honesty:</b> This fixed build does not invent candles or claim to connect to Quotex OTC. Until a verified feed is connected, the status is WAIT. CSV analysis uses only candles you provide and is historical, not live.</div>
+<section class="card"><h2>Market data</h2>
+<p class="muted">Upload an OHLC CSV from a data source you are authorized to use. Required columns: <code>open, high, low, close</code>. Optional: <code>time</code>. At least 22 valid rows are required.</p>
+<form id="form"><input id="csv" type="file" accept=".csv,text/csv" required><button type="submit">Analyze uploaded candles</button></form>
+<p id="status" class="muted">No market data loaded. Signal: WAIT.</p>
+</section>
+<section class="card"><h2>Signal</h2><div id="signal" class="signal wait">WAIT</div><p id="note" class="muted">No verified data loaded. No CALL/PUT signal is available.</p><p id="price" class="muted">Last close: —</p><small id="source">Source: none</small></section>
+<section class="card"><h2>Uploaded candle chart</h2><canvas id="chart" class="chart" aria-label="Candlestick chart"></canvas><p class="muted">Chart is drawn only from the uploaded CSV. No sample candles are generated.</p></section>
+<section class="card"><h2>Important</h2><p class="muted">CALL/PUT rules are simple technical indicators, not a prediction guarantee. Historical data can be delayed or incomplete. This website never places trades, accesses your Quotex account, or guarantees profit. OTC prices require a verified source that actually covers those instruments.</p><p><a href="/health">Check app health</a></p></section>
+</main>
+<script>
+const form=document.getElementById('form'), statusEl=document.getElementById('status'), signalEl=document.getElementById('signal'), noteEl=document.getElementById('note'), priceEl=document.getElementById('price'), sourceEl=document.getElementById('source'), canvas=document.getElementById('chart');
+function wait(message){signalEl.textContent='WAIT';signalEl.className='signal wait';noteEl.textContent=message;statusEl.textContent='Signal: WAIT';}
+function draw(candles){const dpr=window.devicePixelRatio||1,w=canvas.clientWidth||320,h=240;canvas.width=w*dpr;canvas.height=h*dpr;const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,h);if(!candles||!candles.length)return;
+const data=candles.slice(-80),lo=Math.min(...data.map(c=>c.low)),hi=Math.max(...data.map(c=>c.high)),range=hi-lo||1,pad=12,slot=(w-2*pad)/data.length;
+function y(v){return h-pad-(v-lo)/range*(h-2*pad)}ctx.strokeStyle='#35516b';ctx.lineWidth=1;
+for(let i=0;i<4;i++){let yy=pad+i*(h-2*pad)/3;ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(w-pad,yy);ctx.stroke();}
+data.forEach((c,i)=>{let x=pad+i*slot+slot/2,up=c.close>=c.open;ctx.strokeStyle=up?'#00e59b':'#ff5874';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(c.high));ctx.lineTo(x,y(c.low));ctx.stroke();let top=y(Math.max(c.open,c.close)),bottom=y(Math.min(c.open,c.close));ctx.fillRect(x-Math.max(1,slot*.28),top,Math.max(2,slot*.56),Math.max(1,bottom-top));});
+}
+form.addEventListener('submit',async e=>{e.preventDefault();const file=document.getElementById('csv').files[0];if(!file)return;wait('Analyzing supplied candles…');statusEl.textContent='Reading uploaded historical data…';try{const fd=new FormData();fd.append('file',file);const response=await fetch('/api/analyze-csv',{method:'POST',body:fd});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Analysis failed');signalEl.textContent=data.signal;signalEl.className='signal '+(data.signal==='CALL'?'call':data.signal==='PUT'?'put':'wait');noteEl.textContent=data.note;priceEl.textContent='Last close: '+Number(data.last_close).toPrecision(8)+' · Candles: '+data.count;sourceEl.textContent=data.source+' · '+data.as_of_utc;statusEl.textContent='Analysis complete. Historical CSV only; this is not a live feed.';draw(data.candles);}catch(err){wait(err.message+' No signal produced.');statusEl.textContent='Could not analyze file.';}});
+window.addEventListener('resize',()=>{ /* redraw occurs after each successful upload */ });
+</script></body></html>
